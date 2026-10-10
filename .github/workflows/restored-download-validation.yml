@@ -1,0 +1,34 @@
+name: Restored download validation
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/restored-prefetch-wait
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.4'
+      - name: Formatting
+        run: test -z "$(gofmt -l internal/protocol/http/restore_prefetch_test.go internal/protocol/http/fetcher.go)"
+      - name: Baseline regression
+        shell: bash
+        run: |
+          cp internal/protocol/http/fetcher.go /tmp/fixed-fetcher.go
+          git show HEAD^:internal/protocol/http/fetcher.go > internal/protocol/http/fetcher.go
+          set +e
+          go test ./internal/protocol/http -run '^TestFetcher_RestoredStartSkipsAbsentPrefetch$' -count=1 -v > /tmp/baseline.log 2>&1
+          result=$?
+          set -e
+          cat /tmp/baseline.log
+          cp /tmp/fixed-fetcher.go internal/protocol/http/fetcher.go
+          test "$result" -ne 0
+          grep -q 'restored download waited' /tmp/baseline.log
+      - name: Restored download with race detector
+        run: go test -race ./internal/protocol/http -run '^TestFetcher_RestoredStartSkipsAbsentPrefetch$' -count=1 -v
+      - name: HTTP and downloader suites
+        run: go test ./internal/protocol/http/... ./pkg/download/... -count=1 -timeout=15m
